@@ -1,49 +1,36 @@
-# Project Charter: Transaction Fraud Detection
+# Audit Brief: PaySim Fraud Dataset
 
-## 1. Business problem
-A mobile money service (simulated, based on real logs from an African country) is losing money to account-takeover fraud. Fraudsters take control of customer accounts, transfer the funds to another account, then cash out of the system. Customers lose their balances, and the operator bears reimbursement costs and loss of trust. These frauds are hard to spot because each step looks like a normal transfer or cash-out.
+## Context
+PaySim simulates a mobile money service based on real logs from an African country. Its fraud represents account takeover: fraudsters take control of customer accounts, transfer the funds out, then cash out. The dataset is widely used for fraud detection projects, often with near-perfect reported scores.
 
-## 2. Current state
-A rule flags any single transfer above 200,000 (`isFlaggedFraud`). How much fraud this rule catches is not yet known and will be measured during EDA. Fraud below the threshold is not flagged at all.
+## Audit question
+Can this dataset support an honest fraud detection model, one that relies on information available at the time of payment?
 
-Two controls exist. The `isFlaggedFraud` flag raised 16 alerts in 30 days (100% precision) but caught only 0.6% of fraud value, and does not match its documented rule. The documented rule (any TRANSFER above 200,000) would catch 49% of fraud value but generate ~13,200 alerts a day at 0.7% precision, beyond any review team's capacity. Fraud below 200,000 is not caught by either.
+## Existing controls
+| Control | Alerts per day | Precision | Fraud value caught |
+|---|---|---|---|
+| `isFlaggedFraud` column | ~0.5 | 100% | 0.6% |
+| Documented rule (TRANSFER > 200,000) | ~13,200 | 0.7% | 49% |
 
+The `isFlaggedFraud` column does not match its own documented rule.
 
-## 3. Objective
-Score each TRANSFER and CASH_OUT transaction by fraud risk, so that a review team with fixed daily capacity catches more fraud value than the current 200,000 rule. Generate a written case summary for each alert to speed up investigation.
+## Checks performed
+- Class balance by transaction type
+- Performance of existing rules
+- Daily and hourly volume vs fraud patterns
+- Leakage in balance columns
+- Traceability of fraud across accounts
+- Whether a simple rule already separates fraud
 
-## 4. Constraints
-- **Alert budget:** the review team can investigate 500 alerts per day (to be validated against fraud volume in EDA).
-- **Cost asymmetry:** a missed fraud costs more than a false alarm.
-- **Data:** balance columns (`oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest`, `newbalanceDest`) are excluded from modelling. Per the dataset author, fraudulent transactions are cancelled, so these columns leak the label.
-- **Currency:** amounts are in local currency units.
-- **Tools:** free and open-source only; no paid APIs.
-- `step`/`day` are not used as features: legitimate volume varies by day and hour while fraud is injected at a near-constant rate, so time features partly encode the simulator rather than fraud behaviour. Hour of day is tested with and without in phase 4.
+## Decision: not proceeding to modelling
+| Reason | Evidence |
+|---|---|
+| One rule explains almost all fraud | Amount equal to the sender's full balance: 87.7% of fraud value caught at 99.96% precision. The simulator encodes fraud as "empty the account". Most of the remaining fraud is exactly 10,000,000, the simulator's per-transaction cap |
+| Remaining features carry artifacts | Legitimate volume collapses on some days and at night while fraud stays constant, so time features encode the simulator |
+| Balance columns leak the label | Stated by the dataset author; confirmed in destination balances |
+| No usable account history | 99.85% of senders appear once; fraud chains cannot be traced |
 
-## 5. Success metrics
-- **Primary:** share of total fraud value caught within the daily alert budget, compared to the 200,000 rule.
-- **Secondary:** PR-AUC; precision of alerts; share of fraud count caught.
-- **LLM layer:** case summary quality, scored against a rubric defined in phase 6.
-
-## 6. Scope
-**In scope**
-- TRANSFER and CASH_OUT transactions (the only types containing fraud)
-- Offline batch scoring with a time-based train/validation/test split
-- Unsupervised (Isolation Forest) and supervised (XGBoost) models, compared
-- LLM-generated case summaries and their evaluation
-
-**Out of scope**
-- Real-time deployment
-- CASH_IN, DEBIT and PAYMENT transactions
-- Balance columns as model features
-
-## 7. Deliverables
-- EDA and modelling notebooks
-- Feature engineering and scoring pipeline (`src/`)
-- Model comparison table against the 200,000 rule
-- LLM investigation layer with evaluation results
-- Dashboard of alerts and performance
-- README with problem, approach, results and limitations
+A model trained on this data would either rediscover the simulator's fraud rules or have too little honest signal to be meaningful.
 
 ## Data source
-Lopez-Rojas, E. A., Elmir, A., & Axelsson, S. (2016). PaySim: A financial mobile money simulator for fraud detection. EMSS 2016. Dataset via Kaggle.
+Lopez-Rojas, E. A., Elmir, A., & Axelsson, S. (2016). PaySim: A financial mobile money simulator for fraud detection. EMSS 2016.
